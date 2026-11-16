@@ -1,0 +1,227 @@
+import { useState } from 'react';
+import { Download, Lock, Trash2, Users } from 'lucide-react';
+import type { FamilyProfile, HouseholdGroup } from '../types/airwise.ts';
+
+interface SettingsPageProps {
+  profile: FamilyProfile;
+  onUpdateProfile: (next: FamilyProfile) => void;
+  onClearAllData: () => void;
+}
+
+const GROUP_OPTIONS: Array<{ id: HouseholdGroup; label: string; hint: string }> = [
+  { id: 'adults', label: 'Adults', hint: 'General everyday exposure & transit guidance' },
+  { id: 'children', label: 'Children', hint: 'Stricter outdoor play & classroom air thresholds' },
+  { id: 'olderAdults', label: 'Older adults', hint: 'Prioritizes calm indoor rest during smog episodes' },
+  {
+    id: 'respiratorySensitivities',
+    label: 'People with respiratory sensitivities',
+    hint: 'Early precaution triggers at Moderate AQI levels',
+  },
+  { id: 'outdoorWorkers', label: 'Outdoor workers', hint: 'Respirator & break scheduling guidance' },
+  { id: 'fitnessEnthusiasts', label: 'Fitness enthusiasts', hint: 'Cardio intensity & indoor workout shifts' },
+  { id: 'workFromHome', label: 'Work-from-home individuals', hint: 'Workspace airflow & midday window tips' },
+  { id: 'dailyCommuters', label: 'Daily commuters', hint: 'Low-traffic routing & closed-cabin transit advice' },
+];
+
+export function SettingsPage({ profile, onUpdateProfile, onClearAllData }: SettingsPageProps) {
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearedMsg, setClearedMsg] = useState(false);
+
+  function toggleGroup(group: HouseholdGroup) {
+    const exists = profile.groups.includes(group);
+    const groups = exists
+      ? profile.groups.filter((g) => g !== group)
+      : [...profile.groups, group];
+    onUpdateProfile({ ...profile, groups });
+  }
+
+  function handleExportPreferences() {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      note: 'AIRWISE AI stores only non-sensitive household preferences locally.',
+      profile,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'airwise-preferences.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleConfirmClear() {
+    onClearAllData();
+    setConfirmClear(false);
+    setClearedMsg(true);
+    setTimeout(() => setClearedMsg(false), 3000);
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Voluntary Household Profile */}
+      <section className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
+        <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+          <Users className="h-5 w-5 text-[#20C997]" aria-hidden="true" />
+          <div>
+            <h2 className="font-display text-base font-bold text-[#102A43]">
+              Voluntary Household Protection Profile
+            </h2>
+            <p className="text-xs text-slate-500">
+              Select applicable groups to personalize your Daily Routine and AI Assistant guidance. No names, ages, or medical records are collected.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {GROUP_OPTIONS.map((opt) => {
+            const active = profile.groups.includes(opt.id);
+            return (
+              <label
+                key={opt.id}
+                className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3.5 transition-colors ${
+                  active ? 'border-[#102A43] bg-[#F4F8FB]' : 'border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={active}
+                  onChange={() => toggleGroup(opt.id)}
+                  className="mt-1 h-4 w-4 rounded border-slate-300 accent-[#102A43]"
+                />
+                <div>
+                  <span className="block text-sm font-semibold text-[#102A43]">{opt.label}</span>
+                  <span className="block text-xs text-slate-500">{opt.hint}</span>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-4 border-t border-slate-100 pt-5 sm:grid-cols-3">
+          <div>
+            <label htmlFor="pref-size" className="block text-xs font-semibold text-slate-600">
+              Household Size
+            </label>
+            <input
+              id="pref-size"
+              type="number"
+              min={1}
+              max={20}
+              value={profile.householdSize}
+              onChange={(e) =>
+                onUpdateProfile({
+                  ...profile,
+                  householdSize: Math.max(1, Math.min(20, Number(e.target.value) || 1)),
+                })
+              }
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-[#102A43]"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="pref-grid" className="block text-xs font-semibold text-slate-600">
+              Electricity Grid Region
+            </label>
+            <select
+              id="pref-grid"
+              value={profile.gridRegion}
+              onChange={(e) =>
+                onUpdateProfile({
+                  ...profile,
+                  gridRegion: e.target.value as 'INDIA' | 'GLOBAL',
+                })
+              }
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-[#102A43]"
+            >
+              <option value="INDIA">India (CEA 0.716 kg CO2e/kWh)</option>
+              <option value="GLOBAL">Global Average (0.475 kg CO2e/kWh)</option>
+            </select>
+          </div>
+
+          <div className="flex items-end">
+            <label className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg border border-slate-200 px-3 py-2">
+              <input
+                type="checkbox"
+                checked={profile.hasPurifier}
+                onChange={(e) => onUpdateProfile({ ...profile, hasPurifier: e.target.checked })}
+                className="h-4 w-4 rounded border-slate-300 accent-[#102A43]"
+              />
+              <span className="text-xs font-semibold text-[#102A43]">Home uses HEPA purifier</span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      {/* Privacy & Local Data Controls */}
+      <section className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
+        <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+          <Lock className="h-5 w-5 text-[#38BDF8]" aria-hidden="true" />
+          <h2 className="font-display text-base font-bold text-[#102A43]">
+            Privacy, Data Ownership & Security Controls
+          </h2>
+        </div>
+
+        <ul className="mt-4 list-disc space-y-2 pl-5 text-xs leading-relaxed text-slate-600">
+          <li>
+            <strong>No unnecessary personal data:</strong> AIRWISE AI never requires accounts, phone numbers, exact street addresses, or medical records.
+          </li>
+          <li>
+            <strong>Permission-based location:</strong> Browser geolocation is only requested when you explicitly click &ldquo;Use My Location&rdquo;.
+          </li>
+          <li>
+            <strong>Server-side AI & API handling:</strong> All Gemini AI and environmental feed requests execute on the backend server; API keys are never exposed to the browser.
+          </li>
+          <li>
+            <strong>Local-only preferences:</strong> Your household group selections, indoor checklist progress, and calculator inputs stay in your browser&apos;s local storage.
+          </li>
+        </ul>
+
+        <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4">
+          <button
+            type="button"
+            onClick={handleExportPreferences}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-[#102A43] hover:bg-slate-50"
+          >
+            <Download className="h-4 w-4" aria-hidden="true" />
+            <span>Export Local Preferences (JSON)</span>
+          </button>
+
+          {!confirmClear ? (
+            <button
+              type="button"
+              onClick={() => setConfirmClear(true)}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-900 hover:bg-red-100"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+              <span>Clear Local Data</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleConfirmClear}
+                className="rounded-lg bg-red-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-red-700"
+              >
+                Confirm Reset
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmClear(false)}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+
+          {clearedMsg && (
+            <span className="text-xs font-semibold text-emerald-700" role="status">
+              Local preferences reset to defaults.
+            </span>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
