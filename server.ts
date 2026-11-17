@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import {
   AirQualityQuerySchema,
   AssistantRequestSchema,
+  hasUnsafeObjectKeys,
   LocationSearchQuerySchema,
 } from './src/lib/validation.ts';
 import { fetchLiveEnvironmentalSnapshot, searchLocations } from './server/envData.ts';
@@ -18,8 +19,26 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT || 3000);
 const isProduction = process.env.NODE_ENV === 'production';
 
-// Simple sliding-window per-IP rate limiter
+// Sliding-window per-IP rate limiter with expired-bucket pruning & bounded size
+const MAX_RATE_BUCKETS = 1000;
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+function pruneRateBuckets(now: number) {
+  for (const [k, v] of rateBuckets) {
+    if (v.resetAt <= now) {
+      rateBuckets.delete(k);
+    }
+  }
+  while (rateBuckets.size >= MAX_RATE_BUCKETS) {
+    const oldestKey = rateBuckets.keys().next().value;
+    if (!oldestKey) break;
+    rateBuckets.delete(oldestKey);
+  }
+}
+
+export function clearRateLimitBucketsForTests() {
+  rateBuckets.clear();
+}
 
 function rateLimit(maxRequests: number, windowMs: number) {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -29,56 +48,106 @@ function rateLimit(maxRequests: number, windowMs: number) {
     const bucket = rateBuckets.get(key);
 
     if (!bucket || bucket.resetAt <= now) {
-      if (rateBuckets.size > 500) rateBuckets.clear();
-      rateBuckets.set(key, { count: 1, resetAt: now + windowMs });
+      if (rateBuckets.size >= MAX_RATE_BUCKETS) {
+        pruneRateBuckets(now);
+      }
+      const resetAt = now + windowMs;
+      rateBuckets.set(key, { count: 1, resetAt });
+      res.setHeader('RateLimit-Limit', String(maxRequests));
+      res.setHeader('RateLimit-Remaining', String(Math.max(0, maxRequests - 1)));
+      res.setHeader('RateLimit-Reset', String(Math.ceil(windowMs / 1000)));
       return next();
     }
 
+    const resetSeconds = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+    res.setHeader('RateLimit-Limit', String(maxRequests));
+    res.setHeader('RateLimit-Reset', String(resetSeconds));
+
     if (bucket.count >= maxRequests) {
+      res.setHeader('RateLimit-Remaining', '0');
+      res.setHeader('Retry-After', String(resetSeconds));
       return res.status(429).json({
         error: 'Too many requests. Please wait a few seconds before trying again.',
       });
     }
 
     bucket.count += 1;
+    res.setHeader('RateLimit-Remaining', String(Math.max(0, maxRequests - bucket.count)));
     return next();
   };
 }
 
+function isAllowedOrigin(origin: string, req: Request): boolean {
+  const allowedOrigins = new Set<string>([
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://localhost:3000',
+    'https://127.0.0.1:3000',
+  ]);
+  const appUrl = process.env.APP_URL;
+  if (appUrl && appUrl !== 'MY_APP_URL') {
+    allowedOrigins.add(appUrl.replace(/\/$/, ''));
+  }
+  const host = req.headers.host;
+  if (host) {
+    allowedOrigins.add(`https://${host}`);
+    allowedOrigins.add(`http://${host}`);
+  }
+  return allowedOrigins.has(origin);
+}
+
 export function createApp() {
   const app = express();
+  app.set('trust proxy', 1);
   app.disable('x-powered-by');
   app.use(express.json({ limit: '32kb' }));
 
-  // Security headers
-  app.use((_req, res, next) => {
+  // Defense-in-depth security headers
+  app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
     res.setHeader('X-XSS-Protection', '0');
-    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.setHeader('X-DNS-Prefetch-Control', 'off');
+    res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+    res.setHeader('Origin-Agent-Cluster', '?1');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'geolocation=(self)');
+    if (isProduction) {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    if (req.path.startsWith('/api')) {
+      res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+      res.setHeader('Cache-Control', 'no-store');
+    }
     next();
   });
 
-  // Restrictive CORS allowing same-origin and configured APP_URL
+  // Restrictive CORS & CSRF origin enforcement for state-changing API calls
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    const appUrl = process.env.APP_URL;
-    const allowedOrigins = new Set<string>(['http://localhost:3000', 'http://127.0.0.1:3000']);
-    if (appUrl && appUrl !== 'MY_APP_URL') {
-      allowedOrigins.add(appUrl.replace(/\/$/, ''));
-    }
 
-    if (origin && allowedOrigins.has(origin)) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Vary', 'Origin');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    if (origin) {
+      const allowed = isAllowedOrigin(origin, req);
+      if (allowed) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      } else if (req.path.startsWith('/api') && req.method !== 'GET' && req.method !== 'HEAD') {
+        return res.status(403).json({ error: 'Cross-origin request blocked by security policy.' });
+      }
     }
 
     if (req.method === 'OPTIONS') {
       return res.status(204).end();
+    }
+    return next();
+  });
+
+  // Prototype pollution guard for parsed JSON request bodies
+  app.use('/api', (req, res, next) => {
+    if (req.body && typeof req.body === 'object' && hasUnsafeObjectKeys(req.body)) {
+      return res.status(400).json({ error: 'Invalid object keys in request payload.' });
     }
     return next();
   });
@@ -147,8 +216,17 @@ export function createApp() {
     return res.json({ reply });
   });
 
-  // Malformed JSON & safe error handler (never leaks stack traces)
+  // Explicit 404 JSON for unknown API routes (prevents SPA HTML fallback on /api/*)
+  app.use('/api', (_req, res) => {
+    return res.status(404).json({ error: 'API endpoint not found.' });
+  });
+
+  // Malformed JSON, oversized payload & safe error handler (never leaks stack traces)
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+    const typedErr = err as { status?: number; type?: string } | undefined;
+    if (typedErr?.type === 'entity.too.large' || typedErr?.status === 413) {
+      return res.status(413).json({ error: 'Request payload exceeds the 32KB limit.' });
+    }
     if (err instanceof SyntaxError && 'body' in err) {
       return res.status(400).json({ error: 'Malformed JSON request body.' });
     }

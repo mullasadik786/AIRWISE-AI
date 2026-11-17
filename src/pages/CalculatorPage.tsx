@@ -172,9 +172,12 @@ export function CalculatorPage({ input, onChangeInput, onResetInput }: Calculato
                   id="calc-led"
                   type="number"
                   min={0}
-                  max={100}
+                  max={200}
                   value={input.ledBulbsReplacedCount}
-                  onChange={(e) => updateField('ledBulbsReplacedCount', Math.max(0, Number(e.target.value)))}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    updateField('ledBulbsReplacedCount', Number.isFinite(val) ? Math.max(0, Math.min(200, val)) : 0);
+                  }}
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-[#102A43]"
                 />
               </div>
@@ -187,9 +190,12 @@ export function CalculatorPage({ input, onChangeInput, onResetInput }: Calculato
                   id="calc-waste"
                   type="number"
                   min={0}
-                  max={200}
+                  max={500}
                   value={input.wasteReducedKgPerWeek}
-                  onChange={(e) => updateField('wasteReducedKgPerWeek', Math.max(0, Number(e.target.value)))}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    updateField('wasteReducedKgPerWeek', Number.isFinite(val) ? Math.max(0, Math.min(500, val)) : 0);
+                  }}
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-[#102A43]"
                 />
               </div>
@@ -220,7 +226,10 @@ export function CalculatorPage({ input, onChangeInput, onResetInput }: Calculato
                   min={1}
                   max={20}
                   value={input.householdSize}
-                  onChange={(e) => updateField('householdSize', Math.max(1, Number(e.target.value)))}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    updateField('householdSize', Number.isFinite(val) ? Math.max(1, Math.min(20, Math.round(val))) : 1);
+                  }}
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-[#102A43]"
                 />
               </div>

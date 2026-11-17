@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AlertPreferences,
   CityLocation,
@@ -17,7 +17,9 @@ import {
 } from './lib/recommendations.ts';
 import type { CarbonCalculatorInput } from './lib/impact.ts';
 import { calculateCarbonImpact } from './lib/impact.ts';
+import { PersistedStateSchema } from './lib/validation.ts';
 import { WorkspaceLayout } from './components/WorkspaceLayout.tsx';
+import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { LandingPage } from './pages/LandingPage.tsx';
 import { DashboardPage } from './pages/DashboardPage.tsx';
 
@@ -94,10 +96,30 @@ function loadPersistedState(): PersistedState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return {};
-    return JSON.parse(raw) as PersistedState;
+    const parsed = PersistedStateSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : {};
   } catch {
     return {};
   }
+}
+
+const VALID_PAGES: readonly PageId[] = [
+  'landing',
+  'dashboard',
+  'assistant',
+  'routine',
+  'indoor',
+  'sustainability',
+  'calculator',
+  'insights',
+  'community',
+  'notifications',
+  'settings',
+];
+
+function parseHashPage(): PageId | null {
+  const hash = window.location.hash.replace('#', '') as PageId;
+  return VALID_PAGES.includes(hash) ? hash : null;
 }
 
 export default function App() {
@@ -106,21 +128,7 @@ export default function App() {
   const [activePage, setActivePage] = useState<PageId>(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('autostart') === '1') return 'dashboard';
-    const hash = window.location.hash.replace('#', '') as PageId;
-    const validPages: PageId[] = [
-      'landing',
-      'dashboard',
-      'assistant',
-      'routine',
-      'indoor',
-      'sustainability',
-      'calculator',
-      'insights',
-      'community',
-      'notifications',
-      'settings',
-    ];
-    return validPages.includes(hash) ? hash : 'landing';
+    return parseHashPage() ?? 'landing';
   });
 
   const [location, setLocation] = useState<CityLocation>(() => {
@@ -158,7 +166,13 @@ export default function App() {
   );
   const [readAlertIds, setReadAlertIds] = useState<string[]>([]);
 
+  const fetchControllerRef = useRef<AbortController | null>(null);
+
   const fetchSnapshot = useCallback(async (targetLoc: CityLocation) => {
+    fetchControllerRef.current?.abort();
+    const controller = new AbortController();
+    fetchControllerRef.current = controller;
+
     setLoadingFeed(true);
     try {
       const qs = new URLSearchParams({
@@ -170,24 +184,46 @@ export default function App() {
         countryCode: targetLoc.countryCode,
         timezone: targetLoc.timezone,
       });
-      const res = await fetch(`/api/air-quality?${qs.toString()}`);
+      const res = await fetch(`/api/air-quality?${qs.toString()}`, {
+        signal: controller.signal,
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as { snapshot?: EnvironmentalSnapshot };
-      if (data.snapshot) {
-        setSnapshot(data.snapshot);
-      } else {
-        setSnapshot(buildDemoFallbackSnapshot(targetLoc));
+      if (!controller.signal.aborted) {
+        if (data.snapshot) {
+          setSnapshot(data.snapshot);
+        } else {
+          setSnapshot(buildDemoFallbackSnapshot(targetLoc));
+        }
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return;
+      }
       setSnapshot(buildDemoFallbackSnapshot(targetLoc));
     } finally {
-      setLoadingFeed(false);
+      if (!controller.signal.aborted) {
+        setLoadingFeed(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     void fetchSnapshot(location);
+    return () => {
+      fetchControllerRef.current?.abort();
+    };
   }, [location, fetchSnapshot]);
+
+  // Sync browser Back/Forward hash navigation
+  useEffect(() => {
+    const onHashChange = () => {
+      const next = parseHashPage();
+      if (next) setActivePage(next);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   // Persist non-sensitive preferences locally
   useEffect(() => {
@@ -210,6 +246,10 @@ export default function App() {
 
   const navigate = useCallback((page: PageId) => {
     setActivePage(page);
+    const targetHash = page === 'landing' ? '' : `#${page}`;
+    if (window.location.hash !== targetHash) {
+      window.history.pushState(null, '', targetHash || window.location.pathname + window.location.search);
+    }
     window.scrollTo({ top: 0, behavior: 'auto' });
   }, []);
 
@@ -248,7 +288,11 @@ export default function App() {
   }
 
   if (activePage === 'landing') {
-    return <LandingPage snapshot={snapshot} onNavigate={navigate} />;
+    return (
+      <ErrorBoundary onReset={() => navigate('dashboard')}>
+        <LandingPage snapshot={snapshot} onNavigate={navigate} />
+      </ErrorBoundary>
+    );
   }
 
   return (
@@ -258,13 +302,14 @@ export default function App() {
       location={location}
       unreadAlertsCount={unreadAlertsCount}
     >
-      <Suspense
-        fallback={
-          <div className="rounded-xl border border-slate-200 bg-white p-8 text-sm text-slate-600" role="status">
-            Loading module...
-          </div>
-        }
-      >
+      <ErrorBoundary onReset={() => navigate('dashboard')}>
+        <Suspense
+          fallback={
+            <div className="rounded-xl border border-slate-200 bg-white p-8 text-sm text-slate-600" role="status">
+              Loading module...
+            </div>
+          }
+        >
         {activePage === 'dashboard' && (
           <DashboardPage
             snapshot={snapshot}
@@ -355,7 +400,8 @@ export default function App() {
             onClearAllData={handleClearAllData}
           />
         )}
-      </Suspense>
+        </Suspense>
+      </ErrorBoundary>
     </WorkspaceLayout>
   );
 }

@@ -135,7 +135,7 @@ export function AssistantPage({ snapshot, profile }: AssistantPageProps) {
       </section>
 
       {/* Conversation History */}
-      <section className="space-y-5" aria-label="Assistant Responses">
+      <section className="space-y-5" aria-label="Assistant Responses" aria-live="polite">
         {exchanges.length === 0 ? (
           <div className="rounded-xl border border-slate-200 bg-white p-8 text-center">
             <Bot className="mx-auto h-9 w-9 text-[#20C997]" aria-hidden="true" />
@@ -254,6 +254,7 @@ export function AssistantPage({ snapshot, profile }: AssistantPageProps) {
           <input
             id="assistant-question-input"
             type="text"
+            maxLength={600}
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             placeholder={`Ask about air quality in ${snapshot.location.name}, indoor rooms, or commuting...`}
@@ -267,6 +268,10 @@ export function AssistantPage({ snapshot, profile }: AssistantPageProps) {
             <Send className="h-4 w-4" aria-hidden="true" />
             <span>{submitting ? 'Analyzing...' : 'Ask Assistant'}</span>
           </button>
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+          <span>Questions are sanitized server-side and grounded in measured telemetry.</span>
+          <span className="font-mono tabular-nums">{question.length}/600</span>
         </div>
         {errorMsg && (
           <p className="mt-2 text-xs font-medium text-red-700" role="alert">
