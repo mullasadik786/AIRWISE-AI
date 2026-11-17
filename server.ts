@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import fs from 'fs';
+import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
@@ -241,13 +242,21 @@ export function createApp() {
 
 async function startServer() {
   const app = createApp();
+  const httpServer = http.createServer(app);
+  let viteServer: { close: () => Promise<void> } | null = null;
 
   if (!isProduction) {
     const { createServer: createViteServer } = await import('vite');
+    const hmrDisabled = process.env.DISABLE_HMR === 'true';
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: hmrDisabled ? false : { server: httpServer },
+        ws: hmrDisabled ? false : { server: httpServer },
+      },
       appType: 'spa',
     });
+    viteServer = vite;
     app.use(vite.middlewares);
   } else {
     const distPath = path.resolve(__dirname, 'dist');
@@ -259,7 +268,36 @@ async function startServer() {
     }
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`Received ${signal}, shutting down AIRWISE AI server...`);
+    try {
+      await viteServer?.close();
+    } catch {
+      // Ignore Vite close errors during shutdown
+    }
+    httpServer.close(() => {
+      process.exit(0);
+    });
+    httpServer.closeAllConnections?.();
+    setTimeout(() => process.exit(0), 1500).unref();
+  };
+
+  process.once('SIGTERM', () => {
+    void shutdown('SIGTERM');
+  });
+  process.once('SIGINT', () => {
+    void shutdown('SIGINT');
+  });
+
+  httpServer.on('error', (err: NodeJS.ErrnoException) => {
+    console.error(`Failed to start AIRWISE AI server on port ${PORT}:`, err.message);
+    process.exit(1);
+  });
+
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`AIRWISE AI server listening on http://localhost:${PORT}`);
   });
 }
