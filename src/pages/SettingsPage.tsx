@@ -1,10 +1,20 @@
-import { useState } from 'react';
-import { Download, Lock, Trash2, Users } from 'lucide-react';
-import type { FamilyProfile, HouseholdGroup } from '../types/airwise.ts';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { Download, Lock, Trash2, Upload, Users } from 'lucide-react';
+import type { AlertPreferences, FamilyProfile, HouseholdGroup } from '../types/airwise.ts';
+import type { CarbonCalculatorInput } from '../lib/impact.ts';
+import { downloadTextFile } from '../lib/download.ts';
+import { hasUnsafeObjectKeys, PersistedStateSchema } from '../lib/validation.ts';
 
 interface SettingsPageProps {
   profile: FamilyProfile;
+  calcInput?: CarbonCalculatorInput;
+  alertPrefs?: AlertPreferences;
   onUpdateProfile: (next: FamilyProfile) => void;
+  onImportPreferences?: (data: {
+    profile?: FamilyProfile;
+    calcInput?: CarbonCalculatorInput;
+    alertPrefs?: AlertPreferences;
+  }) => void;
   onClearAllData: () => void;
 }
 
@@ -23,9 +33,30 @@ const GROUP_OPTIONS: Array<{ id: HouseholdGroup; label: string; hint: string }> 
   { id: 'dailyCommuters', label: 'Daily commuters', hint: 'Low-traffic routing & closed-cabin transit advice' },
 ];
 
-export function SettingsPage({ profile, onUpdateProfile, onClearAllData }: SettingsPageProps) {
+export function SettingsPage({
+  profile,
+  calcInput,
+  alertPrefs,
+  onUpdateProfile,
+  onImportPreferences,
+  onClearAllData,
+}: SettingsPageProps) {
   const [confirmClear, setConfirmClear] = useState(false);
-  const [clearedMsg, setClearedMsg] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{ text: string; isError: boolean } | null>(null);
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+    };
+  }, []);
+
+  function showStatus(text: string, isError = false) {
+    setStatusMessage({ text, isError });
+    if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+    statusTimerRef.current = setTimeout(() => setStatusMessage(null), 3500);
+  }
 
   function toggleGroup(group: HouseholdGroup) {
     const exists = profile.groups.includes(group);
@@ -40,21 +71,51 @@ export function SettingsPage({ profile, onUpdateProfile, onClearAllData }: Setti
       exportedAt: new Date().toISOString(),
       note: 'AIRWISE AI stores only non-sensitive household preferences locally.',
       profile,
+      ...(calcInput ? { calcInput } : {}),
+      ...(alertPrefs ? { alertPrefs } : {}),
     };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'airwise-preferences.json';
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadTextFile(
+      JSON.stringify(payload, null, 2),
+      'airwise-preferences.json',
+      'application/json'
+    );
+  }
+
+  async function handleImportFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (file.size > 32 * 1024) {
+      showStatus('Preferences file is too large (max 32 KB).', true);
+      return;
+    }
+    try {
+      const raw = await file.text();
+      const json: unknown = JSON.parse(raw);
+      if (hasUnsafeObjectKeys(json)) {
+        showStatus('Rejected file containing unsafe object keys.', true);
+        return;
+      }
+      const parsed = PersistedStateSchema.safeParse(json);
+      if (!parsed.success || (!parsed.data.profile && !parsed.data.calcInput && !parsed.data.alertPrefs)) {
+        showStatus('Invalid AIRWISE preferences JSON format.', true);
+        return;
+      }
+      onImportPreferences?.({
+        profile: parsed.data.profile,
+        calcInput: parsed.data.calcInput,
+        alertPrefs: parsed.data.alertPrefs,
+      });
+      showStatus('Preferences safely validated and restored.');
+    } catch {
+      showStatus('Could not parse preferences JSON file.', true);
+    }
   }
 
   function handleConfirmClear() {
     onClearAllData();
     setConfirmClear(false);
-    setClearedMsg(true);
-    setTimeout(() => setClearedMsg(false), 3000);
+    showStatus('Local preferences reset to defaults.');
   }
 
   return (
@@ -109,12 +170,13 @@ export function SettingsPage({ profile, onUpdateProfile, onClearAllData }: Setti
               min={1}
               max={20}
               value={profile.householdSize}
-              onChange={(e) =>
+              onChange={(e) => {
+                const val = Number(e.target.value);
                 onUpdateProfile({
                   ...profile,
-                  householdSize: Math.max(1, Math.min(20, Number(e.target.value) || 1)),
-                })
-              }
+                  householdSize: Number.isFinite(val) ? Math.max(1, Math.min(20, Math.round(val))) : 1,
+                });
+              }}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-[#102A43]"
             />
           </div>
@@ -181,17 +243,38 @@ export function SettingsPage({ profile, onUpdateProfile, onClearAllData }: Setti
           <button
             type="button"
             onClick={handleExportPreferences}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-[#102A43] hover:bg-slate-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-[#102A43] hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
           >
             <Download className="h-4 w-4" aria-hidden="true" />
             <span>Export Local Preferences (JSON)</span>
           </button>
 
+          {onImportPreferences && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/json,.json"
+                onChange={(e) => void handleImportFile(e)}
+                className="sr-only"
+                aria-label="Import AIRWISE preferences JSON file"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-[#102A43] hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
+              >
+                <Upload className="h-4 w-4" aria-hidden="true" />
+                <span>Import Preferences (JSON)</span>
+              </button>
+            </>
+          )}
+
           {!confirmClear ? (
             <button
               type="button"
               onClick={() => setConfirmClear(true)}
-              className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-900 hover:bg-red-100"
+              className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-900 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
             >
               <Trash2 className="h-4 w-4" aria-hidden="true" />
               <span>Clear Local Data</span>
@@ -201,23 +284,28 @@ export function SettingsPage({ profile, onUpdateProfile, onClearAllData }: Setti
               <button
                 type="button"
                 onClick={handleConfirmClear}
-                className="rounded-lg bg-red-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-red-700"
+                className="rounded-lg bg-red-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
               >
                 Confirm Reset
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmClear(false)}
-                className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
               >
                 Cancel
               </button>
             </div>
           )}
 
-          {clearedMsg && (
-            <span className="text-xs font-semibold text-emerald-700" role="status">
-              Local preferences reset to defaults.
+          {statusMessage && (
+            <span
+              className={`text-xs font-semibold ${
+                statusMessage.isError ? 'text-red-700' : 'text-emerald-700'
+              }`}
+              role={statusMessage.isError ? 'alert' : 'status'}
+            >
+              {statusMessage.text}
             </span>
           )}
         </div>

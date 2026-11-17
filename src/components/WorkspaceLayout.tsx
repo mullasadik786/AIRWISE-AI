@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   Activity,
   Bell,
@@ -55,6 +55,17 @@ export function WorkspaceLayout({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const currentItem = NAV_ITEMS.find((i) => i.id === activePage) ?? NAV_ITEMS[0];
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMobileMenuOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mobileMenuOpen]);
 
   function handleNav(page: PageId) {
     onNavigate(page);

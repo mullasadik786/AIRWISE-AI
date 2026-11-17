@@ -1,6 +1,5 @@
-import { useState } from 'react';
 import { CalendarClock, CheckCircle2, Circle, SlidersHorizontal } from 'lucide-react';
-import type { EnvironmentalSnapshot, FamilyProfile, PageId } from '../types/airwise.ts';
+import type { EnvironmentalSnapshot, FamilyProfile, PageId, RoutineSlot } from '../types/airwise.ts';
 import { buildDailyRoutine, formatHouseholdGroups } from '../lib/recommendations.ts';
 import { RecommendationCard } from '../components/RecommendationCard.tsx';
 import { AqiStatusBadge } from '../components/AqiBadge.tsx';
@@ -8,16 +7,19 @@ import { AqiStatusBadge } from '../components/AqiBadge.tsx';
 interface RoutinePageProps {
   snapshot: EnvironmentalSnapshot;
   profile: FamilyProfile;
+  completedPeriods: Array<RoutineSlot['period']>;
+  onTogglePeriod: (period: RoutineSlot['period']) => void;
   onNavigate: (page: PageId) => void;
 }
 
-export function RoutinePage({ snapshot, profile, onNavigate }: RoutinePageProps) {
+export function RoutinePage({
+  snapshot,
+  profile,
+  completedPeriods,
+  onTogglePeriod,
+  onNavigate,
+}: RoutinePageProps) {
   const slots = buildDailyRoutine(snapshot, profile);
-  const [completedIds, setCompletedIds] = useState<string[]>([]);
-
-  function toggleCompleted(id: string) {
-    setCompletedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  }
 
   return (
     <div className="space-y-6">
@@ -41,7 +43,7 @@ export function RoutinePage({ snapshot, profile, onNavigate }: RoutinePageProps)
           <button
             type="button"
             onClick={() => onNavigate('settings')}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-[#102A43] hover:bg-slate-50"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-[#102A43] hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
           >
             <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
             <span>Edit Household</span>
@@ -51,7 +53,7 @@ export function RoutinePage({ snapshot, profile, onNavigate }: RoutinePageProps)
 
       <div className="space-y-6">
         {slots.map((slot) => {
-          const isDone = completedIds.includes(slot.period);
+          const isDone = completedPeriods.includes(slot.period);
           const suitabilityStyle =
             slot.airSuitability === 'Avoid Outdoor Exposure'
               ? 'bg-red-50 text-red-900 border-red-200'
@@ -80,8 +82,13 @@ export function RoutinePage({ snapshot, profile, onNavigate }: RoutinePageProps)
                   </span>
                   <button
                     type="button"
-                    onClick={() => toggleCompleted(slot.period)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-[#102A43] hover:bg-slate-50"
+                    onClick={() => onTogglePeriod(slot.period)}
+                    aria-pressed={isDone}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+                      isDone
+                        ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                        : 'border-slate-300 text-[#102A43] hover:bg-slate-50'
+                    }`}
                   >
                     {isDone ? (
                       <CheckCircle2 className="h-4 w-4 text-[#20C997]" aria-hidden="true" />

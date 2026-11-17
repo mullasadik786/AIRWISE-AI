@@ -319,8 +319,16 @@ export async function fetchLiveEnvironmentalSnapshot(
     };
 
     if (snapshotCache.size >= 50) {
-      const firstKey = snapshotCache.keys().next().value;
-      if (firstKey) snapshotCache.delete(firstKey);
+      const now = Date.now();
+      for (const [k, entry] of snapshotCache) {
+        if (entry.expiresAt <= now) {
+          snapshotCache.delete(k);
+        }
+      }
+      if (snapshotCache.size >= 50) {
+        const firstKey = snapshotCache.keys().next().value;
+        if (firstKey) snapshotCache.delete(firstKey);
+      }
     }
     snapshotCache.set(cacheKey, { snapshot, expiresAt: Date.now() + CACHE_TTL_MS });
 

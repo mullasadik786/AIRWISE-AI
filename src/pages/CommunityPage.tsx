@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Copy, Download, Shield, Users } from 'lucide-react';
-import { COMMUNITY_CHALLENGES } from '../data/presets.ts';
+import { COMMUNITY_CHALLENGES, type CommunityChallenge } from '../data/presets.ts';
 import type { EnvironmentalSnapshot } from '../types/airwise.ts';
 import { SafeImage } from '../components/SafeImage.tsx';
+import { downloadTextFile } from '../lib/download.ts';
 
 interface CommunityPageProps {
   snapshot: EnvironmentalSnapshot;
@@ -10,18 +11,52 @@ interface CommunityPageProps {
   onToggleJoinChallenge: (id: string) => void;
 }
 
+type ChallengeFilter = 'All' | CommunityChallenge['category'];
+
+const CHALLENGE_FILTERS: readonly ChallengeFilter[] = [
+  'All',
+  'Transport',
+  'Energy',
+  'Indoor',
+  'Neighborhood',
+];
+
 export function CommunityPage({
   snapshot,
   joinedChallengeIds,
   onToggleJoinChallenge,
 }: CommunityPageProps) {
   const [cardTheme, setCardTheme] = useState<'smog' | 'transit' | 'noburn'>('smog');
+  const [challengeFilter, setChallengeFilter] = useState<ChallengeFilter>('All');
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
 
   const collectiveWeeklyKg = COMMUNITY_CHALLENGES.reduce((sum, c) => {
     const joinedBonus = joinedChallengeIds.includes(c.id) ? 1 : 0;
     return sum + (c.participantsCount + joinedBonus) * c.estimatedWeeklyCo2SavedKgPerHome;
   }, 0);
+
+  const personalWeeklyKg = COMMUNITY_CHALLENGES.reduce((sum, c) => {
+    return sum + (joinedChallengeIds.includes(c.id) ? c.estimatedWeeklyCo2SavedKgPerHome : 0);
+  }, 0);
+
+  const maxWeeklyKg = COMMUNITY_CHALLENGES.reduce(
+    (sum, c) => sum + c.estimatedWeeklyCo2SavedKgPerHome,
+    0
+  );
+  const personalProgressPct =
+    maxWeeklyKg > 0 ? Math.min(100, Math.round((personalWeeklyKg / maxWeeklyKg) * 100)) : 0;
+
+  const visibleChallenges =
+    challengeFilter === 'All'
+      ? COMMUNITY_CHALLENGES
+      : COMMUNITY_CHALLENGES.filter((c) => c.category === challengeFilter);
 
   const awarenessTemplates = {
     smog: {
@@ -45,7 +80,8 @@ export function CommunityPage({
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
     } catch {
       setCopied(false);
     }
@@ -62,13 +98,7 @@ export function CommunityPage({
       </foreignObject>
       <text x="64" y="346" fill="#94A3B8" font-family="sans-serif" font-size="14">City-level summary only · No personal location or identity shared</text>
     </svg>`;
-    const blob = new Blob([svg], { type: 'image/svg+xml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `airwise-awareness-${cardTheme}.svg`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadTextFile(svg, `airwise-awareness-${cardTheme}.svg`, 'image/svg+xml');
   }
 
   return (
@@ -86,11 +116,28 @@ export function CommunityPage({
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <p className="text-xs font-semibold text-slate-500">Your Active Weekly Challenges</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-slate-500">Your Active Weekly Challenges</p>
+            <span className="font-mono text-xs font-semibold text-[#20C997] tabular-nums">
+              {personalWeeklyKg.toFixed(1)} kg/wk
+            </span>
+          </div>
           <p className="mt-1 font-mono text-3xl font-bold text-[#102A43] tabular-nums">
             {joinedChallengeIds.length} / {COMMUNITY_CHALLENGES.length}
           </p>
-          <p className="mt-1 text-xs text-slate-600">Join any challenge below to track weekly goals</p>
+          <div
+            className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-slate-100"
+            role="progressbar"
+            aria-label="Weekly challenge CO2e contribution"
+            aria-valuenow={personalProgressPct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className="h-full rounded-full bg-[#20C997] transition-all duration-200"
+              style={{ width: `${personalProgressPct}%` }}
+            />
+          </div>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-5">
@@ -125,11 +172,40 @@ export function CommunityPage({
 
       {/* Weekly Challenges */}
       <section aria-label="Weekly Community Challenges">
-        <h2 className="mb-3 font-display text-base font-bold text-[#102A43]">
-          Weekly Neighborhood & Household Challenges
-        </h2>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {COMMUNITY_CHALLENGES.map((chal) => {
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-display text-base font-bold text-[#102A43]">
+            Weekly Neighborhood & Household Challenges
+          </h2>
+          <div
+            className="flex flex-wrap gap-1.5 rounded-xl border border-slate-200 bg-white p-1"
+            role="tablist"
+            aria-label="Filter challenges by category"
+          >
+            {CHALLENGE_FILTERS.map((cat) => {
+              const active = challengeFilter === cat;
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setChallengeFilter(cat)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+                    active ? 'bg-[#102A43] text-white' : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  {cat}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div
+          className="grid grid-cols-1 gap-4 md:grid-cols-2"
+          role="tabpanel"
+          aria-label={`${challengeFilter} neighborhood challenges`}
+        >
+          {visibleChallenges.map((chal) => {
             const joined = joinedChallengeIds.includes(chal.id);
             return (
               <article key={chal.id} className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-5">
@@ -160,7 +236,7 @@ export function CommunityPage({
                     type="button"
                     onClick={() => onToggleJoinChallenge(chal.id)}
                     aria-pressed={joined}
-                    className={`rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors ${
+                    className={`rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
                       joined
                         ? 'bg-emerald-50 text-emerald-900 border border-emerald-300'
                         : 'bg-[#102A43] text-white hover:bg-[#1a3f63]'
@@ -186,7 +262,7 @@ export function CommunityPage({
               Generate a clean city-level summary card for housing society or school groups (zero personal data).
             </p>
           </div>
-          <div className="flex gap-1.5 rounded-lg bg-slate-100 p-1">
+          <div className="flex gap-1.5 rounded-lg bg-slate-100 p-1" role="tablist" aria-label="Awareness card theme">
             {[
               { id: 'smog', label: 'Winter Smog' },
               { id: 'transit', label: 'Clean Commute' },
@@ -195,8 +271,10 @@ export function CommunityPage({
               <button
                 key={t.id}
                 type="button"
+                role="tab"
+                aria-selected={cardTheme === t.id}
                 onClick={() => setCardTheme(t.id as 'smog' | 'transit' | 'noburn')}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
                   cardTheme === t.id ? 'bg-white text-[#102A43] shadow-xs' : 'text-slate-600'
                 }`}
               >
@@ -206,7 +284,7 @@ export function CommunityPage({
           </div>
         </div>
 
-        <div className="mt-4 rounded-xl bg-[#102A43] p-6 text-white">
+        <div className="mt-4 rounded-xl bg-[#102A43] p-6 text-white" role="tabpanel" aria-label={activeCard.headline}>
           <p className="text-xs font-semibold text-[#20C997]">AIRWISE AI · COMMUNITY ACTION</p>
           <h3 className="mt-2 font-display text-xl font-bold">{activeCard.headline}</h3>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-200">{activeCard.body}</p>
@@ -215,11 +293,11 @@ export function CommunityPage({
           </p>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-3">
+        <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={() => void handleCopyCardText()}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-[#102A43] hover:bg-slate-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-[#102A43] hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
           >
             {copied ? <Check className="h-4 w-4 text-[#20C997]" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
             <span>{copied ? 'Copied Text' : 'Copy Message'}</span>
@@ -227,11 +305,14 @@ export function CommunityPage({
           <button
             type="button"
             onClick={handleDownloadSvgCard}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#102A43] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1a3f63]"
+            className="inline-flex items-center gap-2 rounded-lg bg-[#102A43] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1a3f63] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
           >
             <Download className="h-4 w-4" aria-hidden="true" />
             <span>Download Shareable SVG Card</span>
           </button>
+          <span className="sr-only" aria-live="polite">
+            {copied ? 'Awareness card text copied to clipboard.' : ''}
+          </span>
         </div>
       </section>
     </div>

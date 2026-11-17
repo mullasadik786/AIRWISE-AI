@@ -86,8 +86,10 @@ interface PersistedState {
   customLocation?: CityLocation;
   profile?: FamilyProfile;
   completedTaskIds?: string[];
+  completedRoutinePeriods?: Array<'Morning' | 'Afternoon' | 'Evening' | 'Night'>;
   adoptedHabitIds?: string[];
   joinedChallengeIds?: string[];
+  readAlertIds?: string[];
   calcInput?: CarbonCalculatorInput;
   alertPrefs?: AlertPreferences;
 }
@@ -164,7 +166,10 @@ export default function App() {
   const [alertPrefs, setAlertPrefs] = useState<AlertPreferences>(
     initialPersisted.alertPrefs ?? DEFAULT_ALERT_PREFS
   );
-  const [readAlertIds, setReadAlertIds] = useState<string[]>([]);
+  const [completedRoutinePeriods, setCompletedRoutinePeriods] = useState<
+    Array<'Morning' | 'Afternoon' | 'Evening' | 'Night'>
+  >(initialPersisted.completedRoutinePeriods ?? []);
+  const [readAlertIds, setReadAlertIds] = useState<string[]>(initialPersisted.readAlertIds ?? []);
 
   const fetchControllerRef = useRef<AbortController | null>(null);
 
@@ -233,8 +238,10 @@ export default function App() {
         customLocation: location,
         profile,
         completedTaskIds: indoorTasks.filter((t) => t.completed).map((t) => t.id),
+        completedRoutinePeriods,
         adoptedHabitIds: alternatives.filter((a) => a.adopted).map((a) => a.id),
         joinedChallengeIds: joinedChallenges,
+        readAlertIds,
         calcInput,
         alertPrefs,
       };
@@ -242,7 +249,17 @@ export default function App() {
     } catch {
       // Ignore storage quota errors
     }
-  }, [location, profile, indoorTasks, alternatives, joinedChallenges, calcInput, alertPrefs]);
+  }, [
+    location,
+    profile,
+    indoorTasks,
+    completedRoutinePeriods,
+    alternatives,
+    joinedChallenges,
+    readAlertIds,
+    calcInput,
+    alertPrefs,
+  ]);
 
   const navigate = useCallback((page: PageId) => {
     setActivePage(page);
@@ -280,6 +297,7 @@ export default function App() {
     setLocation(PRESET_CITIES[0]);
     setProfile(DEFAULT_PROFILE);
     setIndoorTasks(getInitialIndoorChecklist());
+    setCompletedRoutinePeriods([]);
     setAlternatives(getInitialLifestyleAlternatives());
     setJoinedChallenges([]);
     setCalcInput(DEFAULT_CALC_INPUT);
@@ -326,7 +344,17 @@ export default function App() {
         {activePage === 'assistant' && <AssistantPage snapshot={snapshot} profile={profile} />}
 
         {activePage === 'routine' && (
-          <RoutinePage snapshot={snapshot} profile={profile} onNavigate={navigate} />
+          <RoutinePage
+            snapshot={snapshot}
+            profile={profile}
+            completedPeriods={completedRoutinePeriods}
+            onTogglePeriod={(period) =>
+              setCompletedRoutinePeriods((prev) =>
+                prev.includes(period) ? prev.filter((p) => p !== period) : [...prev, period]
+              )
+            }
+            onNavigate={navigate}
+          />
         )}
 
         {activePage === 'indoor' && (
@@ -389,6 +417,8 @@ export default function App() {
         {activePage === 'settings' && (
           <SettingsPage
             profile={profile}
+            calcInput={calcInput}
+            alertPrefs={alertPrefs}
             onUpdateProfile={(next) => {
               setProfile(next);
               setCalcInput((prev) => ({
@@ -396,6 +426,11 @@ export default function App() {
                 gridRegion: next.gridRegion,
                 householdSize: next.householdSize,
               }));
+            }}
+            onImportPreferences={(imported) => {
+              if (imported.profile) setProfile(imported.profile);
+              if (imported.calcInput) setCalcInput(imported.calcInput);
+              if (imported.alertPrefs) setAlertPrefs(imported.alertPrefs);
             }}
             onClearAllData={handleClearAllData}
           />

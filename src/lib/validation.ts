@@ -80,8 +80,10 @@ export const PersistedStateSchema = z.object({
   customLocation: CityLocationSchema.optional(),
   profile: FamilyProfileSchema.optional(),
   completedTaskIds: z.array(z.string().max(60)).max(50).optional(),
+  completedRoutinePeriods: z.array(z.enum(['Morning', 'Afternoon', 'Evening', 'Night'])).max(4).optional(),
   adoptedHabitIds: z.array(z.string().max(60)).max(50).optional(),
   joinedChallengeIds: z.array(z.string().max(60)).max(50).optional(),
+  readAlertIds: z.array(z.string().max(60)).max(50).optional(),
   calcInput: CarbonCalculatorInputSchema.optional(),
   alertPrefs: AlertPreferencesSchema.optional(),
 });

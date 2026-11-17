@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildDemoFallbackSnapshot, PRESET_CITIES } from '../data/presets.ts';
+import {
+  buildDemoFallbackSnapshot,
+  COMMUNITY_CHALLENGES,
+  PRESET_CITIES,
+} from '../data/presets.ts';
 import {
   analyzePollutionInsights,
   buildDailyRoutine,
@@ -111,4 +115,20 @@ test('buildSmartAlerts and analyzePollutionInsights produce valid outputs across
   assert.equal(insights.categoryDistribution.length, 6);
   assert.ok(['Rising', 'Improving', 'Stable'].includes(insights.trendDirection));
   assert.ok(['High', 'Moderate', 'Low'].includes(insights.stagnationRisk));
+});
+
+test('all preset cities produce valid demo snapshots and community challenges have valid metrics', () => {
+  for (const city of PRESET_CITIES) {
+    const snap = buildDemoFallbackSnapshot(city);
+    assert.equal(snap.dataStatus, 'DEMO_FALLBACK');
+    assert.equal(snap.hourly.length, 24);
+    assert.equal(snap.daily.length, 3);
+    assert.ok(snap.cpcbAqi !== null && snap.cpcbAqi >= 0);
+  }
+
+  assert.ok(COMMUNITY_CHALLENGES.length >= 4);
+  for (const chal of COMMUNITY_CHALLENGES) {
+    assert.ok(chal.estimatedWeeklyCo2SavedKgPerHome > 0);
+    assert.ok(chal.actionChecklist.length >= 2);
+  }
 });

@@ -125,6 +125,8 @@ test('Security headers, 404 API isolation, prototype pollution, payload size, an
     assert.equal(health.headers.get('x-content-type-options'), 'nosniff');
     assert.equal(health.headers.get('x-frame-options'), 'SAMEORIGIN');
     assert.equal(health.headers.get('content-security-policy'), "default-src 'none'; frame-ancestors 'none'");
+    assert.equal(health.headers.get('cross-origin-resource-policy'), 'same-origin');
+    assert.equal(health.headers.get('x-dns-prefetch-control'), 'off');
     assert.equal(health.headers.get('x-permitted-cross-domain-policies'), 'none');
     assert.equal(health.headers.get('cache-control'), 'no-store');
     assert.equal(health.headers.get('x-powered-by'), null);

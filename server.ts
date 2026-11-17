@@ -118,7 +118,18 @@ export function createApp() {
     if (req.path.startsWith('/api')) {
       res.setHeader('X-Frame-Options', 'SAMEORIGIN');
       res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+      res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
       res.setHeader('Cache-Control', 'no-store');
+    } else if (isProduction) {
+      res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
+      );
+    } else {
+      res.setHeader(
+        'Content-Security-Policy',
+        "object-src 'none'; base-uri 'self'; form-action 'self'"
+      );
     }
     next();
   });

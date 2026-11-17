@@ -19,6 +19,7 @@ import { LocationSelector } from '../components/LocationSelector.tsx';
 import { DataStatusBanner } from '../components/DataStatusBanner.tsx';
 import { AqiStatusBadge } from '../components/AqiBadge.tsx';
 import { AirQualityMap } from '../components/AirQualityMap.tsx';
+import { AccessibleHourlyTable } from '../components/AccessibleHourlyTable.tsx';
 
 interface DashboardPageProps {
   snapshot: EnvironmentalSnapshot;
@@ -316,7 +317,8 @@ export function DashboardPage({
             <button
               type="button"
               onClick={() => setShowAccessibleTable((v) => !v)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-[#102A43] hover:bg-slate-50"
+              aria-expanded={showAccessibleTable}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-[#102A43] hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
             >
               <Table className="h-3.5 w-3.5" aria-hidden="true" />
               <span>{showAccessibleTable ? 'Hide Data Table' : 'Accessible Table'}</span>
@@ -359,30 +361,7 @@ export function DashboardPage({
           </div>
 
           {showAccessibleTable && (
-            <div className="mt-4 max-h-56 overflow-auto rounded-lg border border-slate-200">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-600">
-                  <tr>
-                    <th className="px-3 py-2 font-semibold">Time</th>
-                    <th className="px-3 py-2 font-semibold">Phase</th>
-                    <th className="px-3 py-2 text-right font-semibold">PM2.5 (µg/m³)</th>
-                    <th className="px-3 py-2 text-right font-semibold">PM10 (µg/m³)</th>
-                    <th className="px-3 py-2 text-right font-semibold">CPCB AQI</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-mono tabular-nums">
-                  {chartData.slice(0, 24).map((row, idx) => (
-                    <tr key={`${row.label}-${idx}`}>
-                      <td className="px-3 py-1.5">{row.label}</td>
-                      <td className="px-3 py-1.5 font-sans">{row.phase}</td>
-                      <td className="px-3 py-1.5 text-right">{row.pm25 ?? 'N/A'}</td>
-                      <td className="px-3 py-1.5 text-right">{row.pm10 ?? 'N/A'}</td>
-                      <td className="px-3 py-1.5 text-right">{row.cpcbAqi ?? 'N/A'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <AccessibleHourlyTable rows={chartData} mode="particulates" />
           )}
         </div>
 

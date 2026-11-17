@@ -75,7 +75,14 @@ export function IndoorPage({ snapshot, tasks, onToggleTask }: IndoorPageProps) {
           <p className="mt-1 text-xs text-slate-600">
             {completedCount} of {tasks.length} indoor air actions completed
           </p>
-          <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+          <div
+            className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-slate-100"
+            role="progressbar"
+            aria-label="Indoor air protection progress"
+            aria-valuenow={progressPct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
             <div
               className="h-full rounded-full bg-[#20C997] transition-all duration-200"
               style={{ width: `${progressPct}%` }}
@@ -125,7 +132,7 @@ export function IndoorPage({ snapshot, tasks, onToggleTask }: IndoorPageProps) {
                   role="tab"
                   aria-selected={active}
                   onClick={() => setSelectedRoom(room)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
                     active ? 'bg-[#102A43] text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                   }`}
                 >
@@ -138,7 +145,7 @@ export function IndoorPage({ snapshot, tasks, onToggleTask }: IndoorPageProps) {
       </div>
 
       {/* Room-by-Room Checklist */}
-      <div className="space-y-3">
+      <div className="space-y-3" role="tabpanel" aria-label={`${selectedRoom} indoor air tasks`}>
         {visibleTasks.map((task) => (
           <div
             key={task.id}

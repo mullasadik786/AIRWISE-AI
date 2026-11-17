@@ -1,4 +1,5 @@
-import { AlertTriangle, Clock, Info, TrendingDown, TrendingUp, Wind } from 'lucide-react';
+import { useState } from 'react';
+import { AlertTriangle, Clock, Info, Table, TrendingDown, TrendingUp, Wind } from 'lucide-react';
 import {
   CartesianGrid,
   Line,
@@ -11,12 +12,14 @@ import {
 import type { EnvironmentalSnapshot } from '../types/airwise.ts';
 import { analyzePollutionInsights } from '../lib/recommendations.ts';
 import { SafeImage } from '../components/SafeImage.tsx';
+import { AccessibleHourlyTable } from '../components/AccessibleHourlyTable.tsx';
 
 interface InsightsPageProps {
   snapshot: EnvironmentalSnapshot;
 }
 
 export function InsightsPage({ snapshot }: InsightsPageProps) {
+  const [showTable, setShowTable] = useState(false);
   const insights = analyzePollutionInsights(snapshot);
 
   const chartData = snapshot.hourly.map((h) => ({
@@ -94,12 +97,25 @@ export function InsightsPage({ snapshot }: InsightsPageProps) {
 
       {/* Forecast & Dispersion Chart */}
       <section className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
-        <h2 className="font-display text-base font-bold text-[#102A43]">
-          Hourly CPCB AQI & Wind Dispersion Correlation ({snapshot.location.name})
-        </h2>
-        <p className="text-xs text-slate-500">
-          Compares modeled/observed CPCB AQI against 10m wind speed (km/h) across past 24h and next 24h forecast
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="font-display text-base font-bold text-[#102A43]">
+              Hourly CPCB AQI & Wind Dispersion Correlation ({snapshot.location.name})
+            </h2>
+            <p className="text-xs text-slate-500">
+              Compares modeled/observed CPCB AQI against 10m wind speed (km/h) across past 24h and next 24h forecast
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowTable((v) => !v)}
+            aria-expanded={showTable}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-[#102A43] hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
+          >
+            <Table className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>{showTable ? 'Hide Data Table' : 'Accessible Table'}</span>
+          </button>
+        </div>
 
         <div className="mt-4 h-72 w-full">
           <ResponsiveContainer width="100%" height="100%">
@@ -130,6 +146,8 @@ export function InsightsPage({ snapshot }: InsightsPageProps) {
             </LineChart>
           </ResponsiveContainer>
         </div>
+
+        {showTable && <AccessibleHourlyTable rows={chartData} mode="dispersion" />}
       </section>
 
       {/* Weather Pattern & Preventive Actions */}

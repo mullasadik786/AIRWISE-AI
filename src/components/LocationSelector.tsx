@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { LocateFixed, MapPin, Search } from 'lucide-react';
 import type { CityLocation } from '../types/airwise.ts';
 import { PRESET_CITIES } from '../data/presets.ts';
@@ -19,6 +19,13 @@ export function LocationSelector({
   const [searching, setSearching] = useState(false);
   const [geoLoading, setGeoLoading] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const searchControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      searchControllerRef.current?.abort();
+    };
+  }, []);
 
   async function handleSearch(e: FormEvent) {
     e.preventDefault();
@@ -27,11 +34,19 @@ export function LocationSelector({
       setFeedback('Enter at least 2 characters to search a city or neighborhood.');
       return;
     }
+
+    searchControllerRef.current?.abort();
+    const controller = new AbortController();
+    searchControllerRef.current = controller;
+
     setSearching(true);
     setFeedback(null);
     try {
-      const res = await fetch(`/api/locations/search?q=${encodeURIComponent(clean)}`);
+      const res = await fetch(`/api/locations/search?q=${encodeURIComponent(clean)}`, {
+        signal: controller.signal,
+      });
       const data = (await res.json()) as { results?: CityLocation[]; error?: string };
+      if (controller.signal.aborted) return;
       if (!res.ok) {
         setFeedback(data.error ?? 'Search failed.');
         setResults([]);
@@ -42,10 +57,13 @@ export function LocationSelector({
           setFeedback(`No cities found matching "${clean}". Try a nearby major city.`);
         }
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       setFeedback('Unable to reach location search right now. Select a preset city below.');
     } finally {
-      setSearching(false);
+      if (!controller.signal.aborted) {
+        setSearching(false);
+      }
     }
   }
 

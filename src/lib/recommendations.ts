@@ -33,7 +33,6 @@ export function buildDailyRoutine(
   const aqi = snapshot.cpcbAqi ?? 120;
   const category = snapshot.cpcbCategory;
   const wind = snapshot.weather.windSpeedKmh ?? 8;
-  const temp = snapshot.weather.temperatureC ?? 22;
   const hasChildren = profile.groups.includes('children');
   const hasOlder = profile.groups.includes('olderAdults');
   const hasSensitive = profile.groups.includes('respiratorySensitivities');
@@ -68,14 +67,14 @@ export function buildDailyRoutine(
         : elevated
           ? `Limit vigorous outdoor exertion${hasChildren || hasSensitive ? ' especially for children and respiratory-sensitive members' : ''}; keep walks to tree-lined side streets away from main roads.`
           : 'Proceed with normal outdoor walking or light exercise while checking hourly changes.',
-      why: `Morning surface inversions and cool temperatures (${temp !== null ? `${temp}°C` : 'calm air'}) often trap fine particulates near ground level before daytime solar warming disperses them.`,
+      why: `Morning surface inversions and cool temperatures (${snapshot.weather.temperatureC !== null ? `${snapshot.weather.temperatureC}°C` : 'calm air'}) often trap fine particulates near ground level before daytime solar warming disperses them.`,
       when: 'Between 06:00 and 09:30 local time.',
       expectedBenefits: highRisk
         ? 'Significantly lowers inhaled PM2.5 dose during deep breathing.'
         : 'Reduces peak roadside particulate intake during morning rush hour.',
       estimatedImpact: 'Exercise increases breathing volume 3–6x; shifting indoors during Poor+ AQI cuts active PM2.5 inhalation substantially.',
       confidenceAndLimitations: 'High confidence for exposure reduction; exact indoor PM2.5 depends on window sealing and filtration.',
-      factBasis: `Current CPCB AQI is ${aqi ?? 'unavailable'} (${category}), PM2.5 is ${snapshot.pollutants.pm25 ?? 'N/A'} µg/m³.`,
+      factBasis: `Current CPCB AQI is ${snapshot.cpcbAqi ?? 'unavailable'} (${category}), PM2.5 is ${snapshot.pollutants.pm25 ?? 'N/A'} µg/m³.`,
     },
   ];
 
